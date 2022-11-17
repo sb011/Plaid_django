@@ -9,6 +9,7 @@ urlpatterns = [
     path('api/identity/', views.get_identity.as_view(), name='get-identity'),
     path('api/balance/', views.get_balance.as_view(), name='get-balance'),
     path('api/item/', views.get_item_info.as_view(), name='get-item-info'),
-    path('api/accounts/', views.get_balance.as_view(), name='get-balance'),
+    path('api/accounts/', views.get_account_info.as_view(), name='get-accounts'),
     path('api/webhook/', views.webhook, name='webhook'),
 ]
+
