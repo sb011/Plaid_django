@@ -1,4 +1,5 @@
 import plaid
+import datetime
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from .serializers import AccessToken
@@ -39,3 +40,49 @@ class get_access_token(APIView):
             return Response(status=status.HTTP_400_BAD_REQUEST)
 
         return Response(data=exchange_response, status=status.HTTP_200_OK)
+
+
+class get_transaction(APIView):
+    """
+    Retrieve transactions for credit and depository accounts.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        item = Item.objects.filter(user=self.request.user)
+        if item.count() > 0:
+            access_token = item.values('access_token')[0]['access_token']
+
+            start_date = '{:%Y-%m-%d}'.format(
+                datetime.datetime.now() + datetime.timedelta(-730))
+            end_date = '{:%Y-%m-%d}'.format(datetime.datetime.now())
+
+            try:
+                transactions_response = client.Transactions.get(
+                    access_token, start_date, end_date)
+            except plaid.errors.PlaidError as e:
+                return Response(status=status.HTTP_400_BAD_REQUEST)
+
+            return Response(data={'error': None, 'transactions': transactions_response}, status=status.HTTP_200_OK)
+        else:
+            return Response(status=status.HTTP_400_BAD_REQUEST)
+
+
+class get_identity(APIView):
+    """
+    Retrieve Identity information on file with the bank.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        item = Item.objects.filter(user=self.request.user)
+        if item.count() > 0:
+            access_token = item.values('access_token')[0]['access_token']
+            try:
+                identity_response = client.Identity.get(access_token)
+            except plaid.errors.PlaidError as e:
+                return Response(status=status.HTTP_400_BAD_REQUEST)
+
+            return Response(data={'error': None, 'identity': identity_response}, status=status.HTTP_200_OK)
+        else:
+            return Response(status=status.HTTP_401_UNAUTHORIZED)
