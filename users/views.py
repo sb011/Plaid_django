@@ -1,34 +1,77 @@
-from rest_framework import generics, permissions
+from rest_framework.views import APIView
+from .serializers import UserSerializer, UserLoginSerializer
+from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
-from knox.models import AuthToken
-from .serializers import UserSerializer, RegisterSerializer
-from django.contrib.auth import login
-from rest_framework import permissions
-from rest_framework.authtoken.serializers import AuthTokenSerializer
-from knox.views import LoginView as KnoxLoginView
-
+from rest_framework import status
+from rest_framework.decorators import action
+from django.contrib.auth import authenticate, logout, login
+from rest_framework.authentication import SessionAuthentication, BasicAuthentication
+from rest_framework.permissions import IsAuthenticated
+from django.core.exceptions import ObjectDoesNotExist
+from rest_framework import serializers
 # Register API
 
 
-class RegisterAPI(generics.GenericAPIView):
-    serializer_class = RegisterSerializer
+class UserCreate(APIView):
+    """
+    Creates the new user.
+    """
 
-    def post(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.save()
-        return Response({
-            "user": UserSerializer(user, context=self.get_serializer_context()).data,
-            "token": AuthToken.objects.create(user)[1]
-        })
+    def post(self, request):
+        serializer = UserSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            if user:
+                token = Token.objects.create(user=user)
+                json = serializer.data
+                json['token'] = token.key
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class LoginAPI(KnoxLoginView):
-    permission_classes = (permissions.AllowAny,)
+class UserLogin(APIView):
+    """
+    User login API.
+    """
 
-    def post(self, request, format=None):
-        serializer = AuthTokenSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.validated_data['user']
-        login(request, user)
-        return super(LoginAPI, self).post(request, format=None)
+    @action(methods=['POST', ], detail=False)
+    def post(self, request):
+        serializer = UserLoginSerializer(data=request.data)
+
+        if serializer.is_valid():
+            username = serializer.validated_data['username']
+            password = serializer.validated_data['password']
+            user = authenticate(username=username,
+                                password=password)
+            if user is None:
+                raise serializers.ValidationError(
+                    "Invalid username/password. Please try again!")
+            else:
+                login(request, user)
+                token, created = Token.objects.get_or_create(user=user)
+            return Response({
+                'token': token.key,
+                'user_id': user.pk,
+                'email': user.email
+            }, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class UserLogout(APIView):
+    """
+    User Logout API.
+    """
+    authentication_classes = (SessionAuthentication, BasicAuthentication)
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            request.user.auth_token.delete()
+        except (AttributeError, ObjectDoesNotExist):
+            pass
+
+        logout(request)
+        data = {'success': 'Successfully logged out'}
+        return Response(data=data, status=status.HTTP_200_OK)
